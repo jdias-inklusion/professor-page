@@ -15,18 +15,18 @@ import { createCameraRig } from "./features/cameraRig.js";
 import { createCandleLights } from "./features/candleLights.js";
 
 import { UI } from "./ui/ui.js";
-import { setupGUI, updateFPS } from "./debug/gui.js";
-import { createPicker } from "./debug/pick.js";
+import { setupGUI, updateFPS, attachAudioGUI } from "./debug/gui.js";
 import { createPerfMonitor } from "./debug/perf.js";
 
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+
+import { createAudioManager } from "./core/audio.js";
+import { createAlchemyAudio } from "./features/alchemyAudio.js";
 
 const canvas = document.getElementById("canvas");
 
 /* Renderer */
 const renderer = createRenderer(canvas);
-
-const perf = createPerfMonitor(renderer);
 
 /* Scene */
 const scene = createScene();
@@ -35,6 +35,47 @@ addAlchemyBackground(scene);
 
 /* Camera */
 const camera = createCamera();
+
+/* GUI */
+let gui = null;
+
+/* Performance */
+const perf = createPerfMonitor(renderer);
+
+/* Audio */
+let audio = null;
+let alchemyAudio = null;
+
+function onUserGestureStartAudio() {
+  // cria AudioContext só aqui
+  if (!audio)
+    audio = createAudioManager({ camera, enabled: true, master: 0.9 });
+
+  // resume IMEDIATO (gesture-safe)
+  audio.unlock().then(async (ok) => {
+    if (!ok) return;
+
+    if (!alchemyAudio) {
+      alchemyAudio = await createAlchemyAudio(audio, {
+        ambienceUrl: "/audio/ambience.mp3",
+        candleUrl: "/audio/candle_loop.mp3",
+        magicUrl: "/audio/magic_hum.mp3",
+        owlUrl: "/audio/owl.mp3",
+      });
+
+      attachAudioGUI(gui, audio, alchemyAudio);
+    }
+
+    // start não deve ser await (faz start sync)
+    alchemyAudio.start();
+  });
+}
+
+window.addEventListener("pointerdown", onUserGestureStartAudio, {
+  once: true,
+  passive: true,
+});
+window.addEventListener("keydown", onUserGestureStartAudio, { once: true }); // opcional
 
 /* Lights */
 const lights = addAlchemyLights(scene);
@@ -164,20 +205,9 @@ const candleWorldPoints = [
 
 /* Candle lights */
 const candleLights = createCandleLights(scene, {
-  intensity: 2.0,
-  distance: 6.5,
+  intensity: 2.2,
+  distance: 6.0,
   decay: 2.0,
-
-  flickerAmount: 0.14,
-  flickerSpeed: 1.4,
-  microFlicker: 0.03,
-  microSpeed: 10.0,
-  smoothing: 0.14,
-
-  minFactor: 0.82,
-  maxFactor: 1.1,
-
-  yBob: 0.004,
 });
 scene.add(candleLights.object);
 candleLights.setPoints(candleWorldPoints, {
@@ -201,11 +231,9 @@ const post = createPostprocessing({
   scene,
   camera,
   size: { width: window.innerWidth, height: window.innerHeight },
-
-  bloom: { enabled: true, strength: 0.14, radius: 0.35, threshold: 0.1 },
+  bloom: { enabled: true, strength: 0.22, radius: 0.12, threshold: 0.78 },
   vignette: { enabled: false, offset: 1.08, darkness: 0.35 },
-  grade: { enabled: false, gain: 1.12, gamma: 0.92, lift: 0.0 },
-
+  grade: { enabled: false, contrast: 1.03, lift: 0.005 },
   dof: {
     enabled: false,
     focus: radius * 0.9,
@@ -217,27 +245,14 @@ const post = createPostprocessing({
 /* UI */
 ui.setLoading(null);
 
-/* Picker debug
-const picker = createPicker({
-  camera,
-  domElement: renderer.domElement,
-  root: diorama,
-});
-window.addEventListener("pointerdown", (e) => {
-  if (e.button !== 0) return;
-  const p = picker.pick(e.clientX, e.clientY);
-  if (!p) return;
-  console.log("PICK WORLD:", p.x.toFixed(3), p.y.toFixed(3), p.z.toFixed(3));
-});*/
-
 /* Debug GUI */
-setupGUI({
+gui = setupGUI({
   renderer,
   scene,
   lights,
   particles,
   post,
-  perf,
+  perf
 });
 
 /* Resize */
@@ -255,13 +270,16 @@ startLoop({
   scene,
   camera,
   render: false,
-  onTick: (dt) => {
+  onTick: async (dt) => {
     perf.begin();
     controls.update();
     rig.update(dt);
     particles.update(dt);
     candleLights.update(dt);
 
+    if (alchemyAudio) alchemyAudio.update(dt);
+
+    // exposure dinâmica
     const d = camera.position.distanceTo(controls.target);
     renderer.toneMappingExposure = THREE.MathUtils.clamp(
       1.35 - d * 0.06,
@@ -270,8 +288,7 @@ startLoop({
     );
 
     post.render(dt);
-
-    perf.end(dt);
+    perf.end();
 
     updateFPS();
   },

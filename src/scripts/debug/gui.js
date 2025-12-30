@@ -192,7 +192,6 @@ export function setupGUI({
       addLightFolder(fL, k, v, { intensityMax: 20 });
   }
 
-  // no fim de setupGUI(...)
   // ---------------- Particles ----------------
   if (particles) {
     const fP = gui.addFolder("Particles");
@@ -277,6 +276,7 @@ export function setupGUI({
     post?.vignettePass
   ) {
     const fPost = gui.addFolder("Post");
+    fPost.close();
 
     // Bloom
     fPost.add(post.params.bloom, "enabled");
@@ -333,4 +333,58 @@ export function setupGUI({
   setInterval(updatePerfUI, 250);
 
   return gui;
+}
+
+export function attachAudioGUI(gui, audio, alchemyAudio) {
+  if (!gui || !audio) return;
+
+  const fA = gui.addFolder("Audio");
+
+  const a = {
+    enabled: audio.state.enabled,
+    master: audio.state.master,
+    ambience: audio.groups.ambience.gain.gain.value,
+    candles: audio.groups.candles.gain.gain.value,
+    magic: audio.groups.magic.gain.gain.value,
+    sfx: audio.groups.sfx.gain.gain.value,
+  };
+
+  fA.add(a, "enabled").onChange((v) => audio.setEnabled(v));
+  fA.add(a, "master", 0, 1.5, 0.01).onChange((v) => audio.setMaster(v));
+  fA.add(a, "ambience", 0, 1.5, 0.01).onChange((v) =>
+    audio.setGroupVolume("ambience", v)
+  );
+  fA.add(a, "candles", 0, 1.5, 0.01).onChange((v) =>
+    audio.setGroupVolume("candles", v)
+  );
+  fA.add(a, "magic", 0, 1.5, 0.01).onChange((v) =>
+    audio.setGroupVolume("magic", v)
+  );
+  fA.add(a, "sfx", 0, 1.5, 0.01).onChange((v) =>
+    audio.setGroupVolume("sfx", v)
+  );
+
+  if (alchemyAudio?.params) {
+    const fAl = fA.addFolder("Alchemy Mix");
+
+    fAl
+      .add(alchemyAudio.params.ambience, "enabled")
+      .onChange(() => alchemyAudio.apply());
+    fAl
+      .add(alchemyAudio.params.candles, "enabled")
+      .onChange(() => alchemyAudio.apply());
+    fAl
+      .add(alchemyAudio.params.magic, "enabled")
+      .onChange(() => alchemyAudio.apply());
+
+    fAl
+      .add(alchemyAudio.params.ambience, "volume", 0, 0.6, 0.01)
+      .onChange(() => alchemyAudio.apply());
+    fAl
+      .add(alchemyAudio.params.candles, "volume", 0, 0.6, 0.01)
+      .onChange(() => alchemyAudio.apply());
+    fAl
+      .add(alchemyAudio.params.magic, "volume", 0, 0.6, 0.01)
+      .onChange(() => alchemyAudio.apply());
+  }
 }

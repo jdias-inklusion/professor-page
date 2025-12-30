@@ -10,7 +10,7 @@ export function createRenderer(canvas) {
     powerPreference: "high-performance",
   });
 
-  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.setPixelRatio(1.25);
   renderer.setSize(window.innerWidth, window.innerHeight);
 
   renderer.setClearColor(0x0d0b1a, 1);

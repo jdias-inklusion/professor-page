@@ -2,7 +2,7 @@
 import * as THREE from "three";
 
 /* ---------------------------------------------
-   Textures (procedural, leves)
+   Textures
 --------------------------------------------- */
 function makeSoftDotTexture({ size = 128, inner = 0.12, outer = 0.95 } = {}) {
   const c = document.createElement("canvas");
@@ -144,7 +144,7 @@ function createPointsLayer({
 }
 
 /* ---------------------------------------------
-   Global spawn helpers (WORLD SPACE)
+   Spawn helpers (WORLD)
 --------------------------------------------- */
 const _tmp = new THREE.Vector3();
 
@@ -172,20 +172,21 @@ export function addAlchemyParticles(scene, opts = {}) {
   const {
     bounds = null,
 
+    // fallback volume
     radius = 6,
     height = 3.5,
     center = new THREE.Vector3(0, 1.2, 0),
 
-    // counts
-    dustCount = 1800,
-    moteCount = 900,
-    mistCount = 260,
-    emberCount = 160,
+    // counts (fixos depois de criar)
+    dustCount = 1400,
+    moteCount = 750,
+    mistCount = 160,
+    emberCount = 140,
 
     // sizes
     dustSize = 0.012,
     moteSize = 0.02,
-    mistSize = 0.09,
+    mistSize = 0.085,
     emberSize = 0.02,
 
     // speeds
@@ -200,16 +201,45 @@ export function addAlchemyParticles(scene, opts = {}) {
       new THREE.Vector3(-0.25, 0.85, -0.05),
     ],
 
-    // visual tuning
+    // colors
     dustColor = 0x9fc5ff,
     moteColor = 0xcaa6ff,
     mistColor = 0x7cf5ff,
     emberColor = 0xffb86b,
   } = opts;
 
+  // ---------- GUI-friendly params ----------
+  const params = {
+    enabled: true,
+
+    showDust: true,
+    showSparkles: true,
+    showMist: true,
+    showEmbers: true,
+    showFlames: true,
+
+    dustOpacity: 0.11,
+    sparklesOpacity: 0.55,
+    mistOpacity: 0.08,
+    embersOpacity: 0.75,
+    flamesOpacity: 0.88,
+
+    dustSize,
+    sparklesSize: moteSize,
+    mistSize,
+    embersSize: emberSize,
+
+    dustSpeed,
+    sparklesSpeed: moteSpeed,
+    mistSpeed,
+    embersSpeed: emberSpeed,
+
+    flamesScale: 0.4, // controla altura da chama (base 0.40)
+    flamesFlicker: 1.0, // multiplier do flicker
+  };
+
   const group = new THREE.Group();
   group.name = "AlchemyParticles";
-  group.position.set(0, 0, 0);
   scene.add(group);
 
   const dotTex = makeSoftDotTexture({ inner: 0.12, outer: 0.95 });
@@ -217,22 +247,18 @@ export function addAlchemyParticles(scene, opts = {}) {
 
   let candlePoints = candlePointsInit.map((p) => p.clone());
 
-  let boundsState = bounds;
   const useBounds =
-    !!boundsState?.box &&
-    !!boundsState?.center &&
-    typeof boundsState?.radius === "number";
+    !!bounds?.box && !!bounds?.center && typeof bounds?.radius === "number";
+  const boxW = useBounds ? bounds.box : null;
+  const centerW = useBounds ? bounds.center : center.clone();
+  const radiusW = useBounds ? bounds.radius : radius;
 
-  const getBoxW = () => (useBounds ? boundsState.box : null);
-  const getCenterW = () => (useBounds ? boundsState.center : center);
-  const getRadiusW = () => (useBounds ? boundsState.radius : radius);
-
-  // --- 1) Dust
+  // --- layers
   const dust = createPointsLayer({
     texture: dotTex,
     count: dustCount,
-    size: dustSize,
-    opacity: 0.14,
+    size: params.dustSize,
+    opacity: params.dustOpacity,
     color: dustColor,
     blending: THREE.NormalBlending,
     depthWrite: false,
@@ -240,12 +266,11 @@ export function addAlchemyParticles(scene, opts = {}) {
   });
   group.add(dust.points);
 
-  // --- 2) Sparkles / motes
   const sparkles = createPointsLayer({
     texture: dotTex,
     count: moteCount,
-    size: moteSize,
-    opacity: 0.65,
+    size: params.sparklesSize,
+    opacity: params.sparklesOpacity,
     color: moteColor,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
@@ -253,12 +278,11 @@ export function addAlchemyParticles(scene, opts = {}) {
   });
   group.add(sparkles.points);
 
-  // --- 3) Mist
   const mist = createPointsLayer({
     texture: dotTex,
     count: mistCount,
-    size: mistSize,
-    opacity: 0.1,
+    size: params.mistSize,
+    opacity: params.mistOpacity,
     color: mistColor,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
@@ -266,12 +290,11 @@ export function addAlchemyParticles(scene, opts = {}) {
   });
   group.add(mist.points);
 
-  // --- 4) Embers
   const embers = createPointsLayer({
     texture: dotTex,
     count: emberCount,
-    size: emberSize,
-    opacity: 0.8,
+    size: params.embersSize,
+    opacity: params.embersOpacity,
     color: emberColor,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
@@ -279,11 +302,11 @@ export function addAlchemyParticles(scene, opts = {}) {
   });
   group.add(embers.points);
 
-  // --- 5) Flames
+  // --- flames
   const flameMatBase = new THREE.SpriteMaterial({
     map: flameTex,
     transparent: true,
-    opacity: 0.9,
+    opacity: params.flamesOpacity,
     depthWrite: false,
     depthTest: true,
     blending: THREE.AdditiveBlending,
@@ -299,7 +322,7 @@ export function addAlchemyParticles(scene, opts = {}) {
       const p = candlePoints[i];
       const s = new THREE.Sprite(flameMatBase.clone());
       s.position.copy(p);
-      s.scale.set(0.22, 0.4, 1);
+      s.scale.set(0.22, params.flamesScale, 1);
       s.userData.base = p.clone();
       s.userData.phase = Math.random() * Math.PI * 2;
       group.add(s);
@@ -309,57 +332,15 @@ export function addAlchemyParticles(scene, opts = {}) {
   buildFlames();
 
   /* ---------------------------------------------
-     GUI params (vivos)
-  --------------------------------------------- */
-  const params = {
-    enabled: true,
-
-    dustOpacity: dust.mat.opacity,
-    sparklesOpacity: sparkles.mat.opacity,
-    mistOpacity: mist.mat.opacity,
-    embersOpacity: embers.mat.opacity,
-
-    dustSize: dust.mat.size,
-    sparklesSize: sparkles.mat.size,
-    mistSize: mist.mat.size,
-    embersSize: embers.mat.size,
-
-    dustSpeed,
-    moteSpeed,
-    mistSpeed,
-    emberSpeed,
-  };
-
-  function applyParamsToMaterials() {
-    dust.mat.opacity = params.dustOpacity;
-    sparkles.mat.opacity = params.sparklesOpacity;
-    mist.mat.opacity = params.mistOpacity;
-    embers.mat.opacity = params.embersOpacity;
-
-    dust.mat.size = params.dustSize;
-    sparkles.mat.size = params.sparklesSize;
-    mist.mat.size = params.mistSize;
-    embers.mat.size = params.embersSize;
-
-    group.visible = !!params.enabled;
-  }
-  applyParamsToMaterials();
-
-  /* ---------------------------------------------
-     Spawns (WORLD)
+     Spawns
   --------------------------------------------- */
   function spawnDust() {
-    const boxW = getBoxW();
-    const centerW = getCenterW();
-    const radiusW = getRadiusW();
-
     for (let i = 0; i < dustCount; i++) {
       let p;
-
       if (useBounds) {
         p = randomNearDiorama(boxW, centerW, radiusW, 1.18);
-        // mais para baixo (poeira “no ar” mas não no teto)
-        const t = Math.random() ** 1.6;
+        // ✅ menos bias para o topo
+        const t = Math.random() ** 1.15;
         p.y = THREE.MathUtils.lerp(boxW.min.y, boxW.max.y, t);
       } else {
         const a = Math.random() * Math.PI * 2;
@@ -371,7 +352,6 @@ export function addAlchemyParticles(scene, opts = {}) {
           centerW.z + Math.sin(a) * r
         );
       }
-
       dust.pos[i * 3 + 0] = p.x;
       dust.pos[i * 3 + 1] = p.y;
       dust.pos[i * 3 + 2] = p.z;
@@ -380,30 +360,27 @@ export function addAlchemyParticles(scene, opts = {}) {
   }
 
   function spawnSparkles() {
-    const boxW = getBoxW();
-    const centerW = getCenterW();
-    const radiusW = getRadiusW();
-
     for (let i = 0; i < moteCount; i++) {
       let p;
-
       if (useBounds) {
-        p = randomNearDiorama(boxW, centerW, radiusW, 1.28);
-        // distribui bem, mas evita colar ao teto
-        const t = Math.random() ** 0.9;
-        const yMax = THREE.MathUtils.lerp(centerW.y, boxW.max.y, 0.88);
-        p.y = THREE.MathUtils.lerp(centerW.y, yMax, t);
+        p = randomNearDiorama(boxW, centerW, radiusW, 1.25);
+        // ✅ menos puxa-para-cima
+        const t = Math.random() ** 0.95;
+        p.y = THREE.MathUtils.lerp(
+          boxW.min.y + (bounds?.size?.y ?? 1) * 0.25,
+          boxW.max.y,
+          t
+        );
       } else {
         const a = Math.random() * Math.PI * 2;
-        const r = Math.sqrt(Math.random()) * (radiusW * 0.95);
-        const y = centerW.y + Math.random() * height * 0.9;
+        const r = Math.sqrt(Math.random()) * (radiusW * 0.9);
+        const y = centerW.y + Math.random() * height * 0.95;
         p = new THREE.Vector3(
           centerW.x + Math.cos(a) * r,
           y,
           centerW.z + Math.sin(a) * r
         );
       }
-
       sparkles.pos[i * 3 + 0] = p.x;
       sparkles.pos[i * 3 + 1] = p.y;
       sparkles.pos[i * 3 + 2] = p.z;
@@ -412,29 +389,22 @@ export function addAlchemyParticles(scene, opts = {}) {
   }
 
   function spawnMist() {
-    const boxW = getBoxW();
-    const centerW = getCenterW();
-    const radiusW = getRadiusW();
-
     for (let i = 0; i < mistCount; i++) {
       let p;
-
       if (useBounds) {
-        p = randomNearDiorama(boxW, centerW, radiusW, 1.35);
-        const t = Math.random() ** 1.1;
-        const yMax = THREE.MathUtils.lerp(centerW.y, boxW.max.y, 0.82);
-        p.y = THREE.MathUtils.lerp(centerW.y, yMax, t);
+        p = randomNearDiorama(boxW, centerW, radiusW, 1.32);
+        const t = Math.random() ** 1.05;
+        p.y = THREE.MathUtils.lerp(boxW.min.y, boxW.max.y, t);
       } else {
         const a = Math.random() * Math.PI * 2;
         const r = Math.sqrt(Math.random()) * (radiusW * 0.95);
-        const y = centerW.y + Math.random() * height * 0.85;
+        const y = centerW.y + Math.random() * height;
         p = new THREE.Vector3(
           centerW.x + Math.cos(a) * r,
           y,
           centerW.z + Math.sin(a) * r
         );
       }
-
       mist.pos[i * 3 + 0] = p.x;
       mist.pos[i * 3 + 1] = p.y;
       mist.pos[i * 3 + 2] = p.z;
@@ -453,17 +423,13 @@ export function addAlchemyParticles(scene, opts = {}) {
     embers.geo.attributes.position.needsUpdate = true;
   }
 
-  function respawn() {
-    spawnDust();
-    spawnSparkles();
-    spawnMist();
-    spawnEmbers();
-  }
-
-  respawn();
+  spawnDust();
+  spawnSparkles();
+  spawnMist();
+  spawnEmbers();
 
   /* ---------------------------------------------
-     Setters (para main/gui)
+     Setters
   --------------------------------------------- */
   function setCandlePoints(newPoints) {
     if (!newPoints || !newPoints.length) return;
@@ -479,52 +445,48 @@ export function addAlchemyParticles(scene, opts = {}) {
       typeof newBounds?.radius !== "number"
     )
       return;
-    boundsState = newBounds;
-    respawn();
+    opts.bounds = newBounds;
+    spawnDust();
+    spawnSparkles();
+    spawnMist();
+  }
+
+  function applyParams() {
+    group.visible = !!params.enabled;
+
+    dust.points.visible = !!params.showDust;
+    sparkles.points.visible = !!params.showSparkles;
+    mist.points.visible = !!params.showMist;
+    embers.points.visible = !!params.showEmbers;
+
+    for (const f of flames) f.visible = !!params.showFlames;
+
+    dust.mat.opacity = params.dustOpacity;
+    sparkles.mat.opacity = params.sparklesOpacity;
+    mist.mat.opacity = params.mistOpacity;
+    embers.mat.opacity = params.embersOpacity;
+
+    dust.mat.size = params.dustSize;
+    sparkles.mat.size = params.sparklesSize;
+    mist.mat.size = params.mistSize;
+    embers.mat.size = params.embersSize;
+
+    for (const f of flames) {
+      f.material.opacity = params.flamesOpacity;
+      f.scale.set(0.22, params.flamesScale, 1);
+    }
   }
 
   function setParams(p = {}) {
-    if (p.enabled !== undefined) params.enabled = !!p.enabled;
-
-    if (p.dustOpacity !== undefined) params.dustOpacity = p.dustOpacity;
-    if (p.sparklesOpacity !== undefined)
-      params.sparklesOpacity = p.sparklesOpacity;
-    if (p.mistOpacity !== undefined) params.mistOpacity = p.mistOpacity;
-    if (p.embersOpacity !== undefined) params.embersOpacity = p.embersOpacity;
-
-    if (p.dustSize !== undefined) params.dustSize = p.dustSize;
-    if (p.sparklesSize !== undefined) params.sparklesSize = p.sparklesSize;
-    if (p.mistSize !== undefined) params.mistSize = p.mistSize;
-    if (p.embersSize !== undefined) params.embersSize = p.embersSize;
-
-    if (p.dustSpeed !== undefined) params.dustSpeed = p.dustSpeed;
-    if (p.moteSpeed !== undefined) params.moteSpeed = p.moteSpeed;
-    if (p.mistSpeed !== undefined) params.mistSpeed = p.mistSpeed;
-    if (p.emberSpeed !== undefined) params.emberSpeed = p.emberSpeed;
-
-    applyParamsToMaterials();
+    Object.assign(params, p);
+    applyParams();
   }
 
   function getParams() {
-    return {
-      enabled: group.visible,
-
-      dustOpacity: params.dustOpacity,
-      sparklesOpacity: params.sparklesOpacity,
-      mistOpacity: params.mistOpacity,
-      embersOpacity: params.embersOpacity,
-
-      dustSize: params.dustSize,
-      sparklesSize: params.sparklesSize,
-      mistSize: params.mistSize,
-      embersSize: params.embersSize,
-
-      dustSpeed: params.dustSpeed,
-      moteSpeed: params.moteSpeed,
-      mistSpeed: params.mistSpeed,
-      emberSpeed: params.emberSpeed,
-    };
+    return params; // devolve a referência (GUI mexe direto)
   }
+
+  applyParams();
 
   /* ---------------------------------------------
      Update
@@ -532,153 +494,165 @@ export function addAlchemyParticles(scene, opts = {}) {
   let t = 0;
 
   function update(dt) {
+    if (!params.enabled) return;
     t += dt;
 
-    const centerW = getCenterW();
-    const radiusW = getRadiusW();
-    const boxW = getBoxW();
-
     // Dust
-    for (let i = 0; i < dustCount; i++) {
-      const si = i * 4;
-      const px = i * 3;
+    if (params.showDust) {
+      for (let i = 0; i < dustCount; i++) {
+        const si = i * 4;
+        const px = i * 3;
 
-      const s0 = dust.seed[si + 0];
-      const s1 = dust.seed[si + 1];
-      const s2 = dust.seed[si + 2];
+        const s0 = dust.seed[si + 0];
+        const s1 = dust.seed[si + 1];
+        const s2 = dust.seed[si + 2];
 
-      dust.pos[px + 0] +=
-        Math.sin(t * 0.25 + s0 * 10) * 0.0012 * (params.dustSpeed * 6);
-      dust.pos[px + 2] +=
-        Math.cos(t * 0.22 + s1 * 10) * 0.0012 * (params.dustSpeed * 6);
-      dust.pos[px + 1] +=
-        Math.sin(t * 0.18 + s2 * 10) * 0.0009 * params.dustSpeed;
+        dust.pos[px + 0] +=
+          Math.sin(t * 0.25 + s0 * 10) * 0.0012 * (params.dustSpeed * 6);
+        dust.pos[px + 2] +=
+          Math.cos(t * 0.22 + s1 * 10) * 0.0012 * (params.dustSpeed * 6);
 
-      const dx = dust.pos[px + 0] - centerW.x;
-      const dy = dust.pos[px + 1] - centerW.y;
-      const dz = dust.pos[px + 2] - centerW.z;
+        // ✅ drift vertical muito mais baixo para não “subirem”
+        dust.pos[px + 1] +=
+          Math.sin(t * 0.18 + s2 * 10) * 0.00035 * params.dustSpeed;
 
-      if (dx * dx + dy * dy + dz * dz > (radiusW * 1.35) ** 2) {
-        let p;
-        if (useBounds) {
-          p = randomNearDiorama(boxW, centerW, radiusW, 1.18);
-          const tt = Math.random() ** 1.6;
-          p.y = THREE.MathUtils.lerp(boxW.min.y, boxW.max.y, tt);
-        } else {
-          const a = Math.random() * Math.PI * 2;
-          const r = Math.sqrt(Math.random()) * radiusW;
-          const y = centerW.y + (Math.random() - 0.5) * height;
-          p = new THREE.Vector3(
-            centerW.x + Math.cos(a) * r,
-            y,
-            centerW.z + Math.sin(a) * r
-          );
+        const dx = dust.pos[px + 0] - centerW.x;
+        const dy = dust.pos[px + 1] - centerW.y;
+        const dz = dust.pos[px + 2] - centerW.z;
+
+        if (dx * dx + dy * dy + dz * dz > (radiusW * 1.35) ** 2) {
+          let p;
+          if (useBounds) {
+            p = randomNearDiorama(boxW, centerW, radiusW, 1.18);
+            const tt = Math.random() ** 1.15;
+            p.y = THREE.MathUtils.lerp(boxW.min.y, boxW.max.y, tt);
+          } else {
+            const a = Math.random() * Math.PI * 2;
+            const r = Math.sqrt(Math.random()) * radiusW;
+            const y = centerW.y + (Math.random() - 0.5) * height;
+            p = new THREE.Vector3(
+              centerW.x + Math.cos(a) * r,
+              y,
+              centerW.z + Math.sin(a) * r
+            );
+          }
+          dust.pos[px + 0] = p.x;
+          dust.pos[px + 1] = p.y;
+          dust.pos[px + 2] = p.z;
         }
-        dust.pos[px + 0] = p.x;
-        dust.pos[px + 1] = p.y;
-        dust.pos[px + 2] = p.z;
       }
+      dust.geo.attributes.position.needsUpdate = true;
     }
-    dust.geo.attributes.position.needsUpdate = true;
 
-    // Sparkles (sem pull)
-    sparkles.mat.opacity =
-      params.sparklesOpacity * (0.78 + 0.22 * Math.sin(t * 1.6));
+    // Sparkles
+    if (params.showSparkles) {
+      sparkles.mat.opacity =
+        params.sparklesOpacity * (0.78 + 0.22 * Math.sin(t * 1.6));
 
-    for (let i = 0; i < moteCount; i++) {
-      const si = i * 4;
-      const px = i * 3;
-      const s0 = sparkles.seed[si + 0];
-      const s1 = sparkles.seed[si + 1];
-      const s2 = sparkles.seed[si + 2];
+      for (let i = 0; i < moteCount; i++) {
+        const si = i * 4;
+        const px = i * 3;
 
-      const ang = t * (0.28 + s0 * 0.22);
-      sparkles.pos[px + 0] +=
-        Math.sin(ang + s1 * 6.0) * 0.0026 * params.moteSpeed;
-      sparkles.pos[px + 2] +=
-        Math.cos(ang + s0 * 6.0) * 0.0026 * params.moteSpeed;
-      sparkles.pos[px + 1] +=
-        Math.sin(t * 0.6 + s2 * 9) * 0.0011 * params.moteSpeed;
+        const s0 = sparkles.seed[si + 0];
+        const s1 = sparkles.seed[si + 1];
+        const s2 = sparkles.seed[si + 2];
 
-      const dx = sparkles.pos[px + 0] - centerW.x;
-      const dy = sparkles.pos[px + 1] - centerW.y;
-      const dz = sparkles.pos[px + 2] - centerW.z;
+        const ang = t * (0.28 + s0 * 0.22);
+        sparkles.pos[px + 0] +=
+          Math.sin(ang + s1 * 6.0) * 0.0026 * params.sparklesSpeed;
+        sparkles.pos[px + 2] +=
+          Math.cos(ang + s0 * 6.0) * 0.0026 * params.sparklesSpeed;
 
-      if (dx * dx + dy * dy + dz * dz > (radiusW * 1.55) ** 2) {
-        let p;
-        if (useBounds) {
-          p = randomNearDiorama(boxW, centerW, radiusW, 1.28);
-          const tt = Math.random() ** 0.9;
-          const yMax = THREE.MathUtils.lerp(centerW.y, boxW.max.y, 0.88);
-          p.y = THREE.MathUtils.lerp(centerW.y, yMax, tt);
-        } else {
-          const a = Math.random() * Math.PI * 2;
-          const r = Math.sqrt(Math.random()) * (radiusW * 0.95);
-          const y = centerW.y + Math.random() * height * 0.9;
-          p = new THREE.Vector3(
-            centerW.x + Math.cos(a) * r,
-            y,
-            centerW.z + Math.sin(a) * r
-          );
+        // ✅ drift vertical reduzido
+        sparkles.pos[px + 1] +=
+          Math.sin(t * 0.6 + s2 * 9) * 0.00055 * params.sparklesSpeed;
+
+        const dx = sparkles.pos[px + 0] - centerW.x;
+        const dy = sparkles.pos[px + 1] - centerW.y;
+        const dz = sparkles.pos[px + 2] - centerW.z;
+
+        if (dx * dx + dy * dy + dz * dz > (radiusW * 1.55) ** 2) {
+          let p;
+          if (useBounds) {
+            p = randomNearDiorama(boxW, centerW, radiusW, 1.25);
+            const tt = Math.random() ** 0.95;
+            p.y = THREE.MathUtils.lerp(
+              boxW.min.y + (bounds?.size?.y ?? 1) * 0.25,
+              boxW.max.y,
+              tt
+            );
+          } else {
+            const a = Math.random() * Math.PI * 2;
+            const r = Math.sqrt(Math.random()) * (radiusW * 0.9);
+            const y = centerW.y + Math.random() * height * 0.95;
+            p = new THREE.Vector3(
+              centerW.x + Math.cos(a) * r,
+              y,
+              centerW.z + Math.sin(a) * r
+            );
+          }
+          sparkles.pos[px + 0] = p.x;
+          sparkles.pos[px + 1] = p.y;
+          sparkles.pos[px + 2] = p.z;
         }
-        sparkles.pos[px + 0] = p.x;
-        sparkles.pos[px + 1] = p.y;
-        sparkles.pos[px + 2] = p.z;
       }
+      sparkles.geo.attributes.position.needsUpdate = true;
     }
-    sparkles.geo.attributes.position.needsUpdate = true;
 
     // Mist
-    mist.mat.opacity = params.mistOpacity * (0.75 + 0.25 * Math.sin(t * 0.45));
-    for (let i = 0; i < mistCount; i++) {
-      const si = i * 4;
-      const px = i * 3;
+    if (params.showMist) {
+      mist.mat.opacity =
+        params.mistOpacity * (0.78 + 0.22 * Math.sin(t * 0.45));
 
-      const s0 = mist.seed[si + 0];
-      const s1 = mist.seed[si + 1];
+      for (let i = 0; i < mistCount; i++) {
+        const si = i * 4;
+        const px = i * 3;
 
-      mist.pos[px + 0] +=
-        Math.sin(t * 0.12 + s0 * 10) * 0.0012 * params.mistSpeed;
-      mist.pos[px + 2] +=
-        Math.cos(t * 0.11 + s1 * 10) * 0.0012 * params.mistSpeed;
+        const s0 = mist.seed[si + 0];
+        const s1 = mist.seed[si + 1];
 
-      const dx = mist.pos[px + 0] - centerW.x;
-      const dy = mist.pos[px + 1] - centerW.y;
-      const dz = mist.pos[px + 2] - centerW.z;
+        mist.pos[px + 0] +=
+          Math.sin(t * 0.12 + s0 * 10) * 0.0012 * params.mistSpeed;
+        mist.pos[px + 2] +=
+          Math.cos(t * 0.11 + s1 * 10) * 0.0012 * params.mistSpeed;
 
-      if (dx * dx + dy * dy + dz * dz > (radiusW * 1.7) ** 2) {
-        let p;
-        if (useBounds) {
-          p = randomNearDiorama(boxW, centerW, radiusW, 1.35);
-          const tt = Math.random() ** 1.1;
-          const yMax = THREE.MathUtils.lerp(centerW.y, boxW.max.y, 0.82);
-          p.y = THREE.MathUtils.lerp(centerW.y, yMax, tt);
-        } else {
-          const a = Math.random() * Math.PI * 2;
-          const r = Math.sqrt(Math.random()) * (radiusW * 0.95);
-          const y = centerW.y + Math.random() * height * 0.85;
-          p = new THREE.Vector3(
-            centerW.x + Math.cos(a) * r,
-            y,
-            centerW.z + Math.sin(a) * r
-          );
+        const dx = mist.pos[px + 0] - centerW.x;
+        const dy = mist.pos[px + 1] - centerW.y;
+        const dz = mist.pos[px + 2] - centerW.z;
+
+        if (dx * dx + dy * dy + dz * dz > (radiusW * 1.7) ** 2) {
+          let p;
+          if (useBounds) {
+            p = randomNearDiorama(boxW, centerW, radiusW, 1.32);
+            const tt = Math.random() ** 1.05;
+            p.y = THREE.MathUtils.lerp(boxW.min.y, boxW.max.y, tt);
+          } else {
+            const a = Math.random() * Math.PI * 2;
+            const r = Math.sqrt(Math.random()) * (radiusW * 0.95);
+            const y = centerW.y + Math.random() * height;
+            p = new THREE.Vector3(
+              centerW.x + Math.cos(a) * r,
+              y,
+              centerW.z + Math.sin(a) * r
+            );
+          }
+          mist.pos[px + 0] = p.x;
+          mist.pos[px + 1] = p.y;
+          mist.pos[px + 2] = p.z;
         }
-        mist.pos[px + 0] = p.x;
-        mist.pos[px + 1] = p.y;
-        mist.pos[px + 2] = p.z;
       }
+      mist.geo.attributes.position.needsUpdate = true;
     }
-    mist.geo.attributes.position.needsUpdate = true;
 
     // Embers
-    if (candlePoints.length) {
+    if (params.showEmbers && candlePoints.length) {
       for (let i = 0; i < emberCount; i++) {
         const si = i * 4;
         const px = i * 3;
         const s0 = embers.seed[si + 0];
         const s1 = embers.seed[si + 1];
 
-        embers.pos[px + 1] += (0.006 + s0 * 0.006) * params.emberSpeed;
+        embers.pos[px + 1] += (0.006 + s0 * 0.006) * params.embersSpeed;
         embers.pos[px + 0] += Math.sin(t * 2.2 + s0 * 10) * 0.0009;
         embers.pos[px + 2] += Math.cos(t * 2.0 + s1 * 10) * 0.0009;
 
@@ -693,37 +667,35 @@ export function addAlchemyParticles(scene, opts = {}) {
     }
 
     // Flames
-    for (let i = 0; i < flames.length; i++) {
-      const s = flames[i];
-      const ph = s.userData.phase;
-      const flick =
-        0.1 * Math.sin(t * 10 + ph) +
-        0.06 * Math.sin(t * 17 + ph * 1.7) +
-        0.02 * Math.sin(t * 31 + ph * 2.1);
+    if (params.showFlames) {
+      for (let i = 0; i < flames.length; i++) {
+        const s = flames[i];
+        const ph = s.userData.phase;
 
-      s.position.x = s.userData.base.x + Math.sin(t * 3.0 + ph) * 0.005;
-      s.position.z = s.userData.base.z + Math.cos(t * 2.8 + ph) * 0.005;
-      s.position.y = s.userData.base.y + 0.02 + flick * 0.08;
+        const flickBase =
+          0.1 * Math.sin(t * 10 + ph) +
+          0.06 * Math.sin(t * 17 + ph * 1.7) +
+          0.02 * Math.sin(t * 31 + ph * 2.1);
 
-      s.scale.set(0.22 + flick * 0.08, 0.4 + flick * 0.16, 1);
-      s.material.opacity = 0.78 + flick * 0.22;
+        const flick = flickBase * params.flamesFlicker;
+
+        s.position.x = s.userData.base.x + Math.sin(t * 3.0 + ph) * 0.005;
+        s.position.z = s.userData.base.z + Math.cos(t * 2.8 + ph) * 0.005;
+        s.position.y = s.userData.base.y + 0.02 + flick * 0.08;
+
+        s.scale.set(0.22 + flick * 0.08, params.flamesScale + flick * 0.16, 1);
+        s.material.opacity = params.flamesOpacity * (0.86 + flick * 0.18);
+      }
     }
   }
 
   return {
     object: group,
     update,
-
-    // main
     setCandlePoints,
     setBounds,
-
-    // gui
     setParams,
     getParams,
-    respawn,
-
-    // debug
     _debug: { dust, sparkles, mist, embers, flames },
   };
 }

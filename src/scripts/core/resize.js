@@ -1,9 +1,15 @@
-export function setupResize({ renderer, camera }) {
-  window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth / window.innerHeight;
+export function setupResize({ renderer, camera, onResize } = {}) {
+  function resize() {
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+
+    renderer.setSize(w, h);
+    camera.aspect = w / h;
     camera.updateProjectionMatrix();
 
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  });
+    onResize?.({ width: w, height: h });
+  }
+
+  window.addEventListener("resize", resize);
+  resize();
 }

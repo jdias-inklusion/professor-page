@@ -7,6 +7,7 @@ import { addAlchemyLights } from "./core/lights.js";
 import { addAlchemyBackground } from "./core/background.js";
 import { setupResize } from "./core/resize.js";
 import { startLoop } from "./core/loop.js";
+import { createPostprocessing } from "./core/postprocessing.js";
 
 import { loadGLB } from "./features/loaders.js";
 import { addAlchemyParticles } from "./features/particles.js";
@@ -14,9 +15,9 @@ import { createCameraRig } from "./features/cameraRig.js";
 import { createCandleLights } from "./features/candleLights.js";
 
 import { UI } from "./ui/ui.js";
-
-import { setupGUI } from "./debug/gui.js";
+import { setupGUI, updateFPS } from "./debug/gui.js";
 import { createPicker } from "./debug/pick.js";
+import { createPerfMonitor } from "./debug/perf.js";
 
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
@@ -25,9 +26,11 @@ const canvas = document.getElementById("canvas");
 /* Renderer */
 const renderer = createRenderer(canvas);
 
+const perf = createPerfMonitor(renderer);
+
 /* Scene */
 const scene = createScene();
-scene.background = null; // deixa ver o CSS do body
+scene.background = null;
 addAlchemyBackground(scene);
 
 /* Camera */
@@ -36,7 +39,7 @@ const camera = createCamera();
 /* Lights */
 const lights = addAlchemyLights(scene);
 
-/* Controls — ORBIT */
+/* Controls */
 const controls = new OrbitControls(camera, renderer.domElement);
 controls.enableDamping = true;
 controls.dampingFactor = 0.08;
@@ -55,7 +58,7 @@ const diorama = await loadGLB({
   onProgress: (p) => ui.setLoading(p),
 });
 
-/* Bounds do diorama (WORLD) */
+/* Bounds */
 const box = new THREE.Box3().setFromObject(diorama);
 const size = box.getSize(new THREE.Vector3());
 const center = box.getCenter(new THREE.Vector3());
@@ -66,7 +69,7 @@ const radius = sphere.radius;
 controls.target.copy(center);
 controls.target.y += size.y * 0.12;
 
-/* START POSE */
+/* Start pose */
 const startTarget = center.clone().add(new THREE.Vector3(0, size.y * 0.12, 0));
 controls.target.copy(startTarget);
 
@@ -108,7 +111,7 @@ rig.frameObject(diorama, {
   instant: true,
 });
 
-/* Reposiciona luzes gerais (mantém) */
+/* Reposiciona luzes gerais */
 if (lights.moon) {
   lights.moon.position.set(
     center.x + size.x * 0.6,
@@ -135,26 +138,22 @@ if (lights.magic)
     center.z - size.z * 0.22
   );
 
-/* Candle points (WORLD) */
+/* Candle points */
 const candleWorldPoints = [
-  // Estande de livros - direita
   new THREE.Vector3(5.417, -3.08, -1.008),
   new THREE.Vector3(5.61, -3.37, -0.829),
   new THREE.Vector3(5.632, -3.478, -1.145),
 
-  // Estande de livros - esquerda
   new THREE.Vector3(10.736, -4.166, 4.044),
   new THREE.Vector3(10.951, -4.5, 4.112),
   new THREE.Vector3(10.601, -4.471, 3.848),
 
-  // Mesa alquimista - esquerda
   new THREE.Vector3(-0.724, -2.348, -5.233),
   new THREE.Vector3(-1.744, -2.613, -5.75),
   new THREE.Vector3(-1.406, -2.028, -5.428),
   new THREE.Vector3(-1.893, -2.141, -5.068),
   new THREE.Vector3(-1.426, -2.087, -4.417),
 
-  // Mesa alquimista - tampo
   new THREE.Vector3(-1.352, -1.653, -3.769),
   new THREE.Vector3(-1.274, -1.751, -3.542),
   new THREE.Vector3(-1.499, -1.517, -3.385),
@@ -163,81 +162,101 @@ const candleWorldPoints = [
   new THREE.Vector3(-0.37, -1.321, -3.6),
 ];
 
-/* Candle lights (WORLD) */
+/* Candle lights */
 const candleLights = createCandleLights(scene, {
-  intensity: 2.2,
-  distance: 6.0,
+  intensity: 2.0,
+  distance: 6.5,
   decay: 2.0,
+
+  flickerAmount: 0.14,
+  flickerSpeed: 1.4,
+  microFlicker: 0.03,
+  microSpeed: 10.0,
+  smoothing: 0.14,
+
+  minFactor: 0.82,
+  maxFactor: 1.1,
+
+  yBob: 0.004,
 });
 scene.add(candleLights.object);
 candleLights.setPoints(candleWorldPoints, {
   yOffset: 0.14,
   clusters: [
-    [0, 1, 2], // bookstand direita
-    [3, 4, 5], // bookstand esquerda
-    [6, 7, 8, 9, 10], // mesa esquerda
-    [11, 12, 13, 14, 15, 16], // tampo
+    [0, 1, 2],
+    [3, 4, 5],
+    [6, 7, 8, 9, 10],
+    [11, 12, 13, 14, 15, 16],
   ],
 });
 
-/* Partículas (WORLD + espalhadas pelo diorama todo via bounds) */
+/* Particles */
 const bounds = { box, center, size, radius };
-const particles = addAlchemyParticles(scene, {
-  bounds,
-  // mais densidade + mais “presença”
-  dustCount: 2600,
-  moteCount: 1600,
-  mistCount: 520,
-
-  // ligeiramente maiores (o teu diorama é grande)
-  dustSize: 0.018,
-  moteSize: 0.028,
-  mistSize: 0.14,
-
-  // mais visíveis por cor
-  dustColor: 0xb7d6ff,
-  moteColor: 0xe3c1ff,
-  mistColor: 0xa7ffff,
-});
-
-/* Candle flames/embers no sítio certo (WORLD direto) */
+const particles = addAlchemyParticles(scene, { bounds });
 particles.setCandlePoints(candleWorldPoints);
 
+/* Postprocessing */
+const post = createPostprocessing({
+  renderer,
+  scene,
+  camera,
+  size: { width: window.innerWidth, height: window.innerHeight },
+
+  bloom: { enabled: true, strength: 0.14, radius: 0.35, threshold: 0.1 },
+  vignette: { enabled: false, offset: 1.08, darkness: 0.35 },
+  grade: { enabled: false, gain: 1.12, gamma: 0.92, lift: 0.0 },
+
+  dof: {
+    enabled: false,
+    focus: radius * 0.9,
+    aperture: 0.00025,
+    maxblur: 0.006,
+  },
+});
+
 /* UI */
-controls.update();
 ui.setLoading(null);
 
-// /* Picker debug */
+/* Picker debug
 const picker = createPicker({
   camera,
   domElement: renderer.domElement,
   root: diorama,
 });
-
 window.addEventListener("pointerdown", (e) => {
   if (e.button !== 0) return;
   const p = picker.pick(e.clientX, e.clientY);
   if (!p) return;
   console.log("PICK WORLD:", p.x.toFixed(3), p.y.toFixed(3), p.z.toFixed(3));
-});
+});*/
 
 /* Debug GUI */
 setupGUI({
   renderer,
   scene,
   lights,
-  particles
+  particles,
+  post,
+  perf,
 });
 
 /* Resize */
-setupResize({ renderer, camera });
+setupResize({
+  renderer,
+  camera,
+  onResize: ({ width, height }) => {
+    post.setSize(width, height);
+  },
+});
 
 /* Loop */
 startLoop({
   renderer,
   scene,
   camera,
+  render: false,
   onTick: (dt) => {
+    perf.begin();
     controls.update();
     rig.update(dt);
     particles.update(dt);
@@ -245,9 +264,15 @@ startLoop({
 
     const d = camera.position.distanceTo(controls.target);
     renderer.toneMappingExposure = THREE.MathUtils.clamp(
-      1.55 - d * 0.055,
-      1.10,
-      1.55
+      1.35 - d * 0.06,
+      0.95,
+      1.35
     );
+
+    post.render(dt);
+
+    perf.end(dt);
+
+    updateFPS();
   },
 });
